@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nginx-loadbalancer-tool # Khớp với APP_NAME
-  namespace: maf-tool
+  namespace: nbl-tool
 spec:
   replicas: 1
   selector:
@@ -16,7 +16,7 @@ spec:
       imagePullSecrets:
       - name: gitlab-registry-creds # Tái sử dụng secret cũ
       containers:
-      - name: maf-frontend
+      - name: nlb-frontend
         image: register.tonytechlab.com/tonytechlab/nginx-loadbalancer-tool:latest # Khớp với APP_IMAGE_NAME
         ports:
         - containerPort: 80 # Port Nginx trong Dockerfile
