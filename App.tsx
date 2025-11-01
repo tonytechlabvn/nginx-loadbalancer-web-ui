@@ -14,9 +14,9 @@ const Header: React.FC = () => (
         <CodeBracketIcon className="w-8 h-8 text-cyan-400" />
         <h1 className="text-2xl font-bold text-white tracking-wider">Nginx Config AI Assistant</h1>
       </div>
-       <div className="flex items-center gap-2 text-sm text-cyan-400 font-semibold">
+       <div className="flex items-center gap-2 text-sm text-gray-400 font-semibold">
         <SparklesIcon className="w-5 h-5" />
-        <span>Powered by Gemini</span>
+        <span>Powered by Tony Tech Lab</span>
       </div>
     </div>
   </header>
@@ -323,4 +323,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
