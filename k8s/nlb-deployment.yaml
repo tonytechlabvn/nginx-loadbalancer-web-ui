@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nginx-loadbalancer-tool # Khớp với APP_NAME
-  namespace: nbl-tool
+  namespace: nlb-tool
 spec:
   replicas: 1
   selector:
