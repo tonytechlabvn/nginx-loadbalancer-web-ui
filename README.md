@@ -1,4 +1,4 @@
-# Nginx Config AI Assistant :
+# Nginx Config AI Assistant :.
 
 An AI-powered web application to help you generate Nginx load balancer configurations. Define your upstreams and VIPs, and let the AI generate a secure and optimized configuration file for you.
 
