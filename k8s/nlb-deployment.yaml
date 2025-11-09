@@ -17,6 +17,6 @@ spec:
       - name: gitlab-registry-creds # Re-use the old secret
       containers:
       - name: nlb-frontend
-        image: register.tonytechlab.com/tonytechlab/nginx-loadbalancer-tool:latest # Corresponds to APP_IMAGE_NAME
+        image: register.tonytechlab.com/tonytechlab/nginx-loadbalancer-tool:latest # Corresponds to APP_IMAGE_NAME -Test
         ports:
         - containerPort: 80 # Nginx port in Dockerfile
