@@ -1,12 +1,59 @@
 import React, { useState, useCallback } from 'react';
 import { Upstream, VIP, Server } from './types';
 import { generateNginxConfig } from './services/nginxConfigService';
-import { PlusIcon, TrashIcon, ServerIcon, GlobeAltIcon, CodeBracketIcon, SparklesIcon, ChevronDownIcon, Cog8ToothIcon, BookOpenIcon } from './components/Icons';
+import { PlusIcon, TrashIcon, ServerIcon, GlobeAltIcon, CodeBracketIcon, SparklesIcon, ChevronDownIcon, Cog8ToothIcon, BookOpenIcon, CheckCircleIcon, XCircleIcon } from './components/Icons';
 import { Modal } from './components/Modal';
 import { GuidesTab } from './components/GuidesTab';
 
 // Helper to generate unique IDs
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Mock API function to simulate applying config on a server
+const applyNginxConfig = async (config: string): Promise<{ success: boolean; message: string }> => {
+  console.log("Applying Nginx config:", config.substring(0, 200) + '...');
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 2000)); 
+
+  // Simulate a random success/failure
+  if (Math.random() > 0.2) { // 80% success rate
+    return { success: true, message: "Configuration applied and Nginx reloaded successfully!" };
+  } else {
+    return { success: false, message: "Failed to apply configuration. Nginx reported an error." };
+  }
+};
+
+interface ToastProps {
+  message: string;
+  type: 'success' | 'error';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const bgColor = type === 'success' ? 'bg-green-600/95' : 'bg-red-600/95';
+  const Icon = type === 'success' ? CheckCircleIcon : XCircleIcon;
+
+  return (
+    <div className="fixed top-24 right-5 z-[100] animate-fade-in-down">
+      <div className={`${bgColor} text-white font-bold rounded-lg shadow-2xl flex items-center p-4 backdrop-blur-sm`}>
+        <Icon className="w-6 h-6 mr-3 flex-shrink-0" />
+        <p className="flex-grow">{message}</p>
+        <button onClick={onClose} className="ml-4 -mr-2 p-1 rounded-full hover:bg-white/20 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 const Header: React.FC = () => (
   <header className="bg-gray-800/50 backdrop-blur-sm p-4 border-b border-gray-700 shadow-lg sticky top-0 z-10">
@@ -200,6 +247,8 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [configContent, setConfigContent] = useState('');
   const [activeTab, setActiveTab] = useState<'setup' | 'guides'>('setup');
+  const [isApplying, setIsApplying] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const addUpstream = (upstream: Upstream) => setUpstreams([...upstreams, upstream]);
   const removeUpstream = (id: string) => setUpstreams(upstreams.filter(u => u.id !== id));
@@ -217,22 +266,29 @@ const App: React.FC = () => {
     setIsModalOpen(true);
   }, [upstreams, vips]);
 
-  const handleDownloadConfig = () => {
-    const blob = new Blob([configContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'nginx.conf');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setIsModalOpen(false); // Optionally close modal after download
+  const handleApplyConfig = async () => {
+    setIsApplying(true);
+    setNotification(null);
+    try {
+      const result = await applyNginxConfig(configContent);
+      setNotification({ type: result.success ? 'success' : 'error', message: result.message });
+      if (result.success) {
+        setTimeout(() => {
+            setIsModalOpen(false);
+        }, 1000); // Close modal shortly after success
+      }
+    } catch (error) {
+      console.error("Apply config error:", error);
+      setNotification({ type: 'error', message: 'An unexpected error occurred while communicating with the server.' });
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-900">
       <Header />
+      {notification && <Toast message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
       <main className="container mx-auto p-4 md:p-8">
         <div className="mb-8 border-b border-gray-700">
           <nav className="-mb-px flex space-x-6" aria-label="Tabs">
@@ -335,11 +391,21 @@ const App: React.FC = () => {
             </code>
           </pre>
           <footer className="mt-6 flex justify-end gap-4">
-            <button onClick={() => setIsModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+            <button onClick={() => setIsModalOpen(false)} disabled={isApplying} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               Close
             </button>
-            <button onClick={handleDownloadConfig} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
-              Approve & Download File
+            <button onClick={handleApplyConfig} disabled={isApplying} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center w-40 disabled:opacity-50 disabled:cursor-not-allowed">
+                {isApplying ? (
+                    <>
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span className="ml-2">Applying...</span>
+                    </>
+                ) : (
+                    'Approve & Apply'
+                )}
             </button>
           </footer>
         </>
