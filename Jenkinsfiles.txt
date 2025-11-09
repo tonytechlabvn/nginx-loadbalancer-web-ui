@@ -50,48 +50,6 @@ pipeline {
                 sh "docker logout register.tonytechlab.com"
             }
         }
-
-        stage('Stage 3: Deploy to Kubernetes') {
-            steps {
-                echo 'Starting deployment to Kubernetes cluster...'
-                
-                withCredentials([file(credentialsId: K8S_CONFIG_ID, variable: 'KUBECONFIG_FILE_PATH')]) {
-                    withEnv(["KUBECONFIG=${KUBECONFIG_FILE_PATH}"]) {
-                        
-                        echo '0. Cleaning up old resources...'
-                        // Clean up App, Service, and Ingress
-                        sh "kubectl delete deployment ${APP_NAME} --namespace=${K8S_NAMESPACE} || true"
-                        sh "kubectl delete service ${APP_SERVICE_NAME} --namespace=${K8S_NAMESPACE} || true"
-                        sh "kubectl delete ingress nlb-ingress --namespace=${K8S_NAMESPACE} || true"
-
-                        echo '1. Applying Namespace and Secret...'
-                        // DO NOT DELETE Namespace, only Apply (to protect the secret)
-                        sh "kubectl apply -f k8s/namespace.yaml --namespace=${K8S_NAMESPACE} || true"
-                        // Apply the fixed secret file
-                        sh "kubectl apply -f k8s/registry-secret.yaml --namespace=${K8S_NAMESPACE}"
-
-                        echo '2. Applying Deployment, Service, and Ingress...'
-                        sh "kubectl apply -f k8s/nlb-service.yaml --namespace=${K8S_NAMESPACE}"
-                        sh "kubectl apply -f k8s/nlb-deployment.yaml --namespace=${K8S_NAMESPACE}"
-                        sh "kubectl apply -f k8s/nlb-ingress.yaml --namespace=${K8S_NAMESPACE}"
-
-                        echo '3. Waiting 5 seconds...'
-                        sh "sleep 5" 
-
-                        echo '4. Waiting for deployment to complete...'
-                        sh "kubectl rollout status deployment/${APP_NAME} --namespace=${K8S_NAMESPACE}"
-                        
-                        echo '5. Getting Service Access URLs...'
-                        script {
-                            echo "----------------------------------------------------"
-                            echo "✅ Frontend (Ingress): ${APP_HOST_URL}  (Access externally via Load Balancer/NPM)"
-                            echo "----------------------------------------------------"
-                        }
-                    }
-                }
-            }
-        }
-    } // End of stages
     
     post {
         always {
