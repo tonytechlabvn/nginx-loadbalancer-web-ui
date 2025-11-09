@@ -2,13 +2,13 @@ pipeline {
     agent any
     
     environment {
-        // General name for the application
+        // General application name
         APP_NAME = "nginx-loadbalancer-tool"
         
         // Name for the Service (ClusterIP)
         APP_SERVICE_NAME = "nginx-loadbalancer-tool-svc"
         
-        // Public domain for the Ingress
+        // Public domain for Ingress
         APP_HOST_URL = "http://nlb.tonytechlab.com" 
 
         // Image path on the registry
@@ -18,7 +18,7 @@ pipeline {
         K8S_CONFIG_ID = 'k8s-user-creds' 
         REGISTRY_LOGIN_ID = 'gitlab-registry-login'
 
-        // Updated to the correct namespace
+        // Updated namespace to be correct
         K8S_NAMESPACE = 'nlb-tool'
     }
 
@@ -40,8 +40,8 @@ pipeline {
                 }
                 
                 echo "INFO: Building App image..."
-                // FIXED (added the "." character)
-                sh "docker build -f Dockerfile.txt -t ${APP_IMAGE_NAME}:latest ." 
+                // BUG FIX (added ".")
+                sh "docker build -t ${APP_IMAGE_NAME}:latest ." 
                 
                 echo "INFO: Pushing App image..."
                 sh "docker push ${APP_IMAGE_NAME}:latest"
@@ -65,7 +65,7 @@ pipeline {
                         sh "kubectl delete ingress nlb-ingress --namespace=${K8S_NAMESPACE} || true"
 
                         echo '1. Applying Namespace and Secret...'
-                        // DO NOT DELETE Namespace, just Apply (to protect the secret)
+                        // DO NOT DELETE Namespace, only Apply (to protect the secret)
                         sh "kubectl apply -f k8s/namespace.yaml --namespace=${K8S_NAMESPACE} || true"
                         // Apply the fixed secret file
                         sh "kubectl apply -f k8s/registry-secret.yaml --namespace=${K8S_NAMESPACE}"

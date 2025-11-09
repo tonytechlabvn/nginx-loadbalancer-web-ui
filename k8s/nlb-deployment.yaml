@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-loadbalancer-tool # Corresponds to APP_NAME
+  namespace: nlb-tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-loadbalancer-tool
+  template:
+    metadata:
+      labels:
+        app: nginx-loadbalancer-tool
+    spec:
+      imagePullSecrets:
+      - name: gitlab-registry-creds # Re-use the old secret
+      containers:
+      - name: nlb-frontend
+        image: register.tonytechlab.com/tonytechlab/nginx-loadbalancer-tool:latest # Corresponds to APP_IMAGE_NAME
+        ports:
+        - containerPort: 80 # Nginx port in Dockerfile

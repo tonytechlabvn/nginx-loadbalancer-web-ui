@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-loadbalancer-tool-svc # Corresponds to APP_SERVICE_NAME
+  namespace: nlb-tool
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-loadbalancer-tool
+  ports:
+    - protocol: TCP
+      port: 80 
+      targetPort: 80
