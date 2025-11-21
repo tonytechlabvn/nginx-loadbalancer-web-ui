@@ -2,51 +2,61 @@ pipeline {
     agent any
     
     environment {
-        // Harbor Domain registry
+        // Harbor Registry Domain
         HARBOR_DOMAIN_NAME = "harbor.tonytechlab.com"
         
-        // Image path on the registry
+        // Base Image Name (Tag will be appended dynamically during the build process)
         APP_IMAGE_NAME = "harbor.tonytechlab.com/template-nlb/nginx-loadbalancer-tool"
-
-        // Credentials IDs (Đảm bảo ID này đã tồn tại trong Jenkins)
+        
+        // Jenkins Credentials ID for Harbor Registry
         REGISTRY_LOGIN_ID = 'harbor-registry-login'
-
-        // Updated namespace to be correct
-        K8S_NAMESPACE = 'nlb-tool'
+        
+        // CRITICAL: Define dynamic Docker Tag based on Jenkins Build Number
+        // Example: Build #39 -> DOCKER_TAG = "0.1.39"
+        // This ensures every build has a unique, immutable version.
+        DOCKER_TAG = "0.1.${env.BUILD_NUMBER}" 
     }
 
     stages {
-        stage('Stage 1: Checkout Latest Code') {
+        stage('Stage 1: Checkout Source Code') {
             steps {
-                echo 'Starting to check out code...'
-                cleanWs()
+                echo "INFO: Starting source code checkout..."
+                cleanWs() // Clean workspace before starting
                 checkout scm
-                echo "SUCCESS: Code checkout complete."
+                echo "INFO: Source code checkout completed successfully."
             }
         }
 
-        stage('Stage 2: Build & Push App') { 
+        stage('Stage 2: Build & Push Docker Image') { 
             steps {
-                echo "INFO: Logging into Registry..."
+                echo "INFO: Building Docker Image version: ${DOCKER_TAG}..."
+                
+                // Authenticate with Harbor Registry
                 withCredentials([usernamePassword(credentialsId: REGISTRY_LOGIN_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-                    sh "docker login ${HARBOR_DOMAIN_NAME} -u ${REG_USER} -p ${REG_PASS}"
+                     sh 'echo $REG_PASS | docker login ${HARBOR_DOMAIN_NAME} -u $REG_USER --password-stdin'
                 }
                 
-                echo "INFO: Building App image..."
-                // Lưu ý: Đảm bảo file 'Dockerfile.txt' tồn tại, nếu không hãy đổi thành 'Dockerfile'
-                sh "docker build -f Dockerfile.txt -t ${APP_IMAGE_NAME}:latest ."
+                // 1. Build Docker image with the dynamic tag
+                sh "docker build -f Dockerfile.txt -t ${APP_IMAGE_NAME}:${DOCKER_TAG} ."
                 
-                echo "INFO: Pushing App image..."
+                // 2. Push the specific versioned image to Harbor
+                sh "docker push ${APP_IMAGE_NAME}:${DOCKER_TAG}"
+                
+                // 3. (Optional) Tag and push 'latest' for reference/backup purposes
+                // Note: 'latest' should not be used for production deployments in GitOps.
+                sh "docker tag ${APP_IMAGE_NAME}:${DOCKER_TAG} ${APP_IMAGE_NAME}:latest"
                 sh "docker push ${APP_IMAGE_NAME}:latest"
-
-                echo "INFO: Logging out from Registry..."
+                
+                // Logout for security
                 sh "docker logout ${HARBOR_DOMAIN_NAME}"
             }
         }
         
-        stage('Stage 3: Debug, Build & Push') { 
+        stage('Stage 3: Package & Publish Helm Chart') { 
             steps {
-                echo "INFO: Logging into Registry..."
+                echo "INFO: Preparing to package Helm Chart version: ${DOCKER_TAG}..."
+                
+                // Authenticate Helm Client with Harbor OCI Registry
                 withCredentials([usernamePassword(credentialsId: REGISTRY_LOGIN_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
                      sh 'echo $REG_PASS | helm registry login ${HARBOR_DOMAIN_NAME} -u $REG_USER --password-stdin'
                 }
@@ -54,54 +64,67 @@ pipeline {
                 script {
                     def chartName = "template-nlb"
                     
-                    // 1. Reset sạch sẽ
+                    // Clean up previous build artifacts to ensure a fresh environment
                     sh "rm -rf build_area && mkdir build_area"
                     
                     dir('build_area') {
-                        // 2. Tạo khung
+                        // 1. Initialize Helm Chart scaffolding and remove default boilerplate templates
                         sh "helm create ${chartName}"
                         sh "rm -rf ${chartName}/templates/*"
                         
-                        // 3. Copy file (Thêm lọc file ẩn và rác)
-                        echo "INFO: Copying YAML files..."
+                        // 2. Copy source YAML files from Git into the build area
+                        // Ensures we only use explicitly defined manifests
+                        echo "INFO: Copying manifest files..."
                         sh "cp -f ../helm/values.yaml ${chartName}/values.yaml"
-                        
-                        // Chỉ copy đúng 3 file này thôi (AN TOÀN TUYỆT ĐỐI)
-                        // Không dùng *.yaml nữa để tránh file rác
                         sh "cp ../helm/deployment.yaml ${chartName}/templates/"
                         sh "cp ../helm/service.yaml ${chartName}/templates/"
                         sh "cp ../helm/ingress.yaml ${chartName}/templates/"
+                        
+                        // ============================================================
+                        // 🔥 AUTOMATION STEP: Inject Dynamic Image Tag 🔥
+                        // ============================================================
+                        // Dynamically replace the placeholder tag in values.yaml with the actual Build Tag.
+                        // This allows ArgoCD to detect the version change and trigger a sync.
+                        echo "INFO: Updating 'values.yaml' with new image tag: ${DOCKER_TAG}"
+                        
+                        if (isUnix()) {
+                            // Use sed to find 'tag: latest' and replace it with 'tag: 0.1.xx'
+                            sh "sed -i 's|tag: latest|tag: ${DOCKER_TAG}|g' ${chartName}/values.yaml"
+                        }
+                        
+                        // Debug: Verify the replacement in the console logs
+                        echo "--- VERIFICATION: values.yaml CONTENT ---"
+                        sh "grep 'tag:' ${chartName}/values.yaml"
 
-                        // 4. DEBUG QUAN TRỌNG: DRY-RUN
-                        // Lệnh này sẽ render thử chart ra màn hình console.
-                        // Nếu chart lỗi cấu trúc, Jenkins sẽ ĐỎ ngay tại đây và báo lỗi chi tiết.
-                        echo "============================================"
-                        echo "DEBUG: RUNNING HELM TEMPLATE (DRY RUN)"
-                        echo "============================================"
-                        sh "helm template ${chartName} --debug"
-                        echo "============================================"
-
-                        // 5. Đóng gói & Push
-                        def chartVersion = "0.1.${env.BUILD_NUMBER}"
-                        sh "helm package ${chartName} --version ${chartVersion} --app-version latest"
-                        sh "helm push ${chartName}-${chartVersion}.tgz oci://${HARBOR_DOMAIN_NAME}/template-nlb"
+                        // 3. Package the Helm Chart
+                        // Synchronize Chart Version and App Version with the Docker Tag
+                        sh "helm package ${chartName} --version ${DOCKER_TAG} --app-version ${DOCKER_TAG}"
+                        
+                        // 4. Push the OCI Chart to Harbor
+                        echo "INFO: Pushing Helm Chart to OCI Registry..."
+                        sh "helm push ${chartName}-${DOCKER_TAG}.tgz oci://${HARBOR_DOMAIN_NAME}/template-nlb"
                     }
                 }
+                
+                // Logout Helm Client
                 sh "helm registry logout ${HARBOR_DOMAIN_NAME}"
             }
         }
-
     } // End of stages
-    
+
+    // Post-build Actions
     post {
         always {
-            echo 'Pipeline has finished (Regardless of success or failure).'
+            echo '--------------------------------------------------------'
+            echo "🏁 Pipeline finished. Build Version: ${DOCKER_TAG}"
+            echo '--------------------------------------------------------'
         }
         success {
-            echo '✅ SUCCESS: Pipeline completed successfully!'
+            echo '✅ SUCCESS: Pipeline completed successfully! Artifacts are ready in Harbor.'
         }
         failure {
-            echo '❌ FAILED: Pipeline failed.'
+            echo '❌ FAILED: Pipeline encountered an error.'
+            echo '👉 Please check the Console Output above for debugging details.'
         }
-    } // End of post
+    } 
 }
