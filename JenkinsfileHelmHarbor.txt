@@ -44,7 +44,7 @@ pipeline {
             }
         }
         
-        stage('Stage 3: Auto-Assemble & Push Helm Chart') { 
+        stage('Stage 3: Debug, Build & Push') { 
             steps {
                 echo "INFO: Logging into Registry..."
                 withCredentials([usernamePassword(credentialsId: REGISTRY_LOGIN_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
@@ -54,50 +54,39 @@ pipeline {
                 script {
                     def chartName = "template-nlb"
                     
-                    // 1. Tạo môi trường sạch
+                    // 1. Reset sạch sẽ
                     sh "rm -rf build_area && mkdir build_area"
                     
                     dir('build_area') {
-                        // 2. Tạo khung Chart chuẩn
+                        // 2. Tạo khung
                         sh "helm create ${chartName}"
-
-                        // 3. Dọn dẹp folder templates
                         sh "rm -rf ${chartName}/templates/*"
                         
-                        // ====================================================
-                        // FIX: XỬ LÝ CÁC FILE CẤU HÌNH (Chart.yaml & values.yaml)
-                        // ====================================================
-                        echo "INFO: Overwriting config files..."
-                        
-                        // Copy values.yaml (Ghi đè file gốc)
+                        // 3. Copy file (Thêm lọc file ẩn và rác)
+                        echo "INFO: Copying YAML files..."
                         sh "cp -f ../helm/values.yaml ${chartName}/values.yaml"
                         
-                        // [NEW] Nếu Tony có file Chart.yaml custom trong git, hãy copy nó ra ROOT chart
-                        // Lệnh này sẽ copy nếu file tồn tại, nếu không thì bỏ qua (|| true)
-                        sh "cp -f ../helm/Chart.yaml ${chartName}/Chart.yaml || true"
+                        // Chỉ copy đúng 3 file này thôi (AN TOÀN TUYỆT ĐỐI)
+                        // Không dùng *.yaml nữa để tránh file rác
+                        sh "cp ../helm/deployment.yaml ${chartName}/templates/"
+                        sh "cp ../helm/service.yaml ${chartName}/templates/"
+                        sh "cp ../helm/ingress.yaml ${chartName}/templates/"
 
-                        // ====================================================
-                        // FIX: COPY TEMPLATES (LOẠI TRỪ Chart.yaml)
-                        // ====================================================
-                        echo "INFO: Copying YAML templates..."
-                        
-                        // Thêm: ! -name "Chart.yaml" để không copy nhầm file này vào folder templates
-                        sh """
-                            find ../helm -maxdepth 1 -name "*.yaml" ! -name "values.yaml" ! -name "Chart.yaml" ! -name "*.tgz" -exec cp {} ${chartName}/templates/ \\;
-                        """
-                        
-                        // Debug: Liệt kê file để kiểm tra
-                        sh "ls -R ${chartName}"
+                        // 4. DEBUG QUAN TRỌNG: DRY-RUN
+                        // Lệnh này sẽ render thử chart ra màn hình console.
+                        // Nếu chart lỗi cấu trúc, Jenkins sẽ ĐỎ ngay tại đây và báo lỗi chi tiết.
+                        echo "============================================"
+                        echo "DEBUG: RUNNING HELM TEMPLATE (DRY RUN)"
+                        echo "============================================"
+                        sh "helm template ${chartName} --debug"
+                        echo "============================================"
 
-                        // 4. ĐÓNG GÓI
+                        // 5. Đóng gói & Push
                         def chartVersion = "0.1.${env.BUILD_NUMBER}"
                         sh "helm package ${chartName} --version ${chartVersion} --app-version latest"
-                        
-                        // 5. PUSH
                         sh "helm push ${chartName}-${chartVersion}.tgz oci://${HARBOR_DOMAIN_NAME}/template-nlb"
                     }
                 }
-                
                 sh "helm registry logout ${HARBOR_DOMAIN_NAME}"
             }
         }
