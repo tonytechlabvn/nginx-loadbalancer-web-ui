@@ -2,7 +2,10 @@ pipeline {
     agent any
     
     environment {
-       // Image path on the registry
+       // Harbor Domain registry
+        HARBOR_DOMAIN_NAME = "harbor.tonytechlab.com"
+		
+	   // Image path on the registry
         APP_IMAGE_NAME = "harbor.tonytechlab.com/template-nlb/nginx-loadbalancer-tool"
 
         // Credentials IDs
@@ -37,7 +40,26 @@ pipeline {
                 sh "docker push ${APP_IMAGE_NAME}:latest"
 
                 echo "INFO: Logging out from Registry..."
-                sh "docker logout harbor.tonytechlab.com"
+                sh "docker logout ${HARBOR_DOMAIN_NAME}"
+            }
+        }
+		
+		stage('Stage 3: Push Helm Chart To Registry') { 
+            steps {
+                echo "INFO: Logging into Registry..."
+                withCredentials([usernamePassword(credentialsId: REGISTRY_LOGIN_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+                    sh "helm registry login harbor.tonytechlab.com -u ${REG_USER} -p ${REG_PASS}"
+                }
+                
+                echo "INFO: Load Package..."
+				sh "sh "https://github.com/tonytechlabvn/nginx-loadbalancer-web-ui/blob/main/helm/template-nlb-0.1.0.tgz"
+				echo "INFO: Push to Registry..."
+                
+				echo "INFO: Push Package..."
+				sh "helm push template-nlb-0.1.0.tgz oci://${APP_IMAGE_NAME}"
+
+                echo "INFO: Logging out from Registry..."
+                sh "helm registry logout ${HARBOR_DOMAIN_NAME}"
             }
         }
 
