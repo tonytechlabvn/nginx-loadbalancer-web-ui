@@ -44,24 +44,61 @@ pipeline {
             }
         }
         
-        stage('Stage 3: Push Helm Chart To Registry') { 
+        stage('Stage 3: Auto-Assemble & Push Helm Chart') { 
             steps {
                 echo "INFO: Logging into Registry..."
                 withCredentials([usernamePassword(credentialsId: REGISTRY_LOGIN_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-                    sh "helm registry login ${HARBOR_DOMAIN_NAME} -u ${REG_USER} -p ${REG_PASS}"
+                     sh 'echo $REG_PASS | helm registry login ${HARBOR_DOMAIN_NAME} -u $REG_USER --password-stdin'
                 }
                 
-                echo "INFO: Load Package..."
-                // FIX 1 & 2: Dùng wget và đổi 'blob' thành 'raw' để tải file binary
-                sh "wget https://github.com/tonytechlabvn/nginx-loadbalancer-web-ui/raw/main/helm/template-nlb-0.1.0.tgz"
-                
-                echo "INFO: Push Package..."
-                // FIX 3: Sửa lỗi thiếu ngoặc kép và logic OCI
-                // Lưu ý: Helm OCI thường đẩy vào Project level, ví dụ: oci://harbor.tonytechlab.com/template-nlb
-                // Ở đây mình đẩy vào path image của bạn, Helm sẽ tạo artifact OCI tại đó.
-                sh "helm push template-nlb-0.1.0.tgz oci://${HARBOR_DOMAIN_NAME}/template-nlb"
+                script {
+                    def chartName = "template-nlb"
+                    
+                    // 1. Tạo môi trường sạch
+                    sh "rm -rf build_area && mkdir build_area"
+                    
+                    dir('build_area') {
+                        // 2. Tạo khung Chart chuẩn (Sinh ra values.yaml mặc định)
+                        sh "helm create ${chartName}"
 
-                echo "INFO: Logging out from Registry..."
+                        // 3. Dọn dẹp folder templates (Xóa deployment/service mẫu)
+                        sh "rm -rf ${chartName}/templates/*"
+                        
+                        // ====================================================
+                        // QUAN TRỌNG: XỬ LÝ VALUES.YAML
+                        // ====================================================
+                        echo "INFO: Overwriting default values.yaml with User config..."
+                        
+                        // Lệnh này copy file values.yaml của Tony đè lên file values.yaml vừa được tạo
+                        // -f (force): Bắt buộc ghi đè không cần hỏi
+                        // Vị trí đích: ${chartName}/values.yaml (Nằm ngay root chart)
+                        sh "cp -f ../helm/values.yaml ${chartName}/values.yaml"
+                        
+                        // ====================================================
+                        // XỬ LÝ CÁC FILE TEMPLATE KHÁC (Deployment, Service...)
+                        // ====================================================
+                        echo "INFO: Copying other YAML files to templates folder..."
+                        
+                        // Logic: Tìm tất cả file .yaml trong git
+                        // NHƯNG LOẠI TRỪ (! -name) file values.yaml vì đã copy ở trên rồi
+                        // Copy tất cả vào folder 'templates/'
+                        sh """
+                            find ../helm -maxdepth 1 -name "*.yaml" ! -name "values.yaml" ! -name "*.tgz" -exec cp {} ${chartName}/templates/ \\;
+                        """
+                        
+                        // Debug: In ra nội dung file values.yaml sau khi copy để Tony kiểm tra trong log
+                        echo "--- CHECK CONTENT OF VALUES.YAML ---"
+                        sh "cat ${chartName}/values.yaml"
+
+                        // 4. ĐÓNG GÓI
+                        def chartVersion = "0.1.${env.BUILD_NUMBER}"
+                        sh "helm package ${chartName} --version ${chartVersion} --app-version latest"
+                        
+                        // 5. PUSH
+                        sh "helm push ${chartName}-${chartVersion}.tgz oci://${HARBOR_DOMAIN_NAME}/template-nlb"
+                    }
+                }
+                
                 sh "helm registry logout ${HARBOR_DOMAIN_NAME}"
             }
         }

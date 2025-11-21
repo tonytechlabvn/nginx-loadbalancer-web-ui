@@ -1,0 +1,24 @@
+#  cho dự án nlb
+
+replicaCount: 1
+
+deployment:
+  name: nginx-loadbalancer-tool #
+
+image:
+  # Image chúng ta đã push lên Harbor (thay vì GitLab registry)
+  repository: harbor.tonytechlab.com/tonytechlab/nginx-loadbalancer-tool
+  tag: latest # Có thể thay đổi tag này khi deploy
+  pullSecretsName: gitlab-registry-creds # Tên secret đã tạo ở K8s
+
+service:
+  name: nginx-loadbalancer-tool-svc #
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+
+ingress:
+  enabled: true # Bật Ingress
+  name: nlb-ingress #
+  className: nginx
+  host: "nlb.tonytechlab.com" #
